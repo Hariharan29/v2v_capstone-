@@ -1,0 +1,125 @@
+# docker-compose.yml — V2V IDS Federated Learning System
+# =========================================================
+#
+# Services defined here:
+#   redis       — message broker for BSM broadcast + mode alerts
+#   vehicle     — benign vehicles (scale via `--scale vehicle=10`)
+#   attacker    — adversarial vehicle (1 instance)
+#   fl_server   — FL aggregation server [STUB: Member B fills this]
+#
+# Usage:
+#   # Week 1 — single vehicle standalone test
+#   docker compose up redis vehicle --scale vehicle=1
+#
+#   # Week 2 — full 10+1 deployment
+#   docker compose up --scale vehicle=10
+#
+#   # Integration test (all services, including fl_server when B delivers it)
+#   docker compose up
+#
+# To rebuild after code changes:
+#   docker compose build && docker compose up
+
+version: "3.9"
+
+networks:
+  v2v_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# ── Shared build context ───────────────────────────────────────────────────
+x-vehicle-build: &vehicle-build
+  context: .
+  dockerfile: Dockerfile
+
+# ── Shared vehicle environment ─────────────────────────────────────────────
+x-vehicle-env: &vehicle-env
+  REDIS_HOST:              redis
+  REDIS_PORT:              "6379"
+  FL_SERVER_HOST:          fl_server
+  FL_SERVER_PORT:          "8080"
+  MODEL_DIR:               /app/model
+  TRAIN_SAMPLE_THRESHOLD:  "500"
+  TRAIN_TIME_INTERVAL_S:   "60"
+  GENERATION_INTERVAL_S:   "0.5"
+  PYTHONUNBUFFERED:        "1"
+  TF_CPP_MIN_LOG_LEVEL:    "3"
+
+services:
+
+  # ── Redis ─────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: v2v_redis
+    networks:
+      - v2v_net
+    ports:
+      - "6379:6379"      # expose for debugging with redis-cli
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # ── Benign Vehicles ────────────────────────────────────────────────────────
+  # Scale with: docker compose up --scale vehicle=10
+  # VEHICLE_ID is derived at runtime from hostname in entrypoint.sh
+  vehicle:
+    build: *vehicle-build
+    environment:
+      <<: *vehicle-env
+      ROLE: benign
+    networks:
+      - v2v_net
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      replicas: 10
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+
+  # ── Attacker Vehicle ───────────────────────────────────────────────────────
+  attacker:
+    build: *vehicle-build
+    container_name: v2v_attacker
+    environment:
+      <<: *vehicle-env
+      VEHICLE_ID:           "attacker_01"
+      ROLE:                 attacker
+      ATTACKER_INTERVAL_S:  "0.1"   # flood faster than benign
+    networks:
+      - v2v_net
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── FL Server ─────────────────────────────────────────────────────────────
+  # STUB — Member B fills in the image/build and environment
+  # Uncomment and complete when fl_server/ directory is ready
+  #
+  # fl_server:
+  #   build:
+  #     context: .
+  #     dockerfile: fl_server/Dockerfile
+  #   container_name: v2v_fl_server
+  #   environment:
+  #     NUM_ROUNDS:       "10"
+  #     MIN_FIT_CLIENTS:  "10"
+  #     KRUM_F:           "1"        # number of assumed Byzantine clients
+  #     PROXIMAL_MU:      "0.01"     # FedProx mu sent to clients each round
+  #   networks:
+  #     - v2v_net
+  #   ports:
+  #     - "8080:8080"
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
+  #   restart: unless-stopped

@@ -1,0 +1,19 @@
+# Vehicle container Python dependencies
+# tensorflow-cpu is used (CPU-only) — smaller image, sufficient for inference
+# and local training on simulated vehicle hardware
+
+tensorflow-cpu==2.16.2
+numpy>=1.24.0,<2.0.0
+pandas>=2.0.0
+scikit-learn>=1.4.0
+joblib>=1.3.2
+redis>=5.0.0
+redis[asyncio]>=5.0.0
+
+# Flower FL framework — Member B's client.py also uses this
+flwr>=1.9.0
+
+# ── Stage 3 additions (uncomment when PQC is implemented) ─────────────────
+# liboqs-python>=0.8.0   # Falcon + Kyber via liboqs
+# cryptography>=42.0.0   # AES-256-GCM + ECDSA fallback
+# PyNaCl>=1.5.0          # XChaCha20-Poly1305
